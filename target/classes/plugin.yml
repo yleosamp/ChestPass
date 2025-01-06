@@ -1,0 +1,12 @@
+name: ChestPass
+version: '1.0'
+main: com.chestpass.chestpass.ChestPass
+api-version: '1.21'
+
+permissions:
+  chestpass.use.on:
+    description: Permite usar o plugin normalmente
+    default: true
+  chestpass.use.off:
+    description: Bloqueia o uso do plugin (apenas pode abrir baús com senha)
+    default: false
