@@ -2,8 +2,10 @@ package com.chestpass.chestpass;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -13,15 +15,20 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.profile.PlayerProfile;
+import org.bukkit.profile.PlayerTextures;
 
 public class ChestPass extends JavaPlugin implements Listener {
 
@@ -31,16 +38,40 @@ public class ChestPass extends JavaPlugin implements Listener {
     private Map<Player, Block> bauAtual = new HashMap<>();
     private Map<Player, Boolean> definindoSenha = new HashMap<>();
     private Map<Player, ItemStack[]> inventariosSalvos = new HashMap<>(); // Novo Map
+    private Map<Player, Boolean> senhaDefinidaComSucesso = new HashMap<>();
+    private YamlConfiguration messages;
+    private String language;
 
     @Override
     public void onEnable() {
+        saveResource("messages.yml", false);
+        loadMessages();
         getServer().getPluginManager().registerEvents(this, this);
         carregarDados();
         
-        // Salva os dados a cada 5 minutos
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             salvarDados();
-        }, 6000L, 6000L); // 6000 ticks = 5 minutos
+        }, 6000L, 6000L);
+    }
+
+    private void loadMessages() {
+        File messagesFile = new File(getDataFolder(), "messages.yml");
+        messages = YamlConfiguration.loadConfiguration(messagesFile);
+        language = messages.getString("language", "en");
+        
+        // Normaliza o idioma para pt-br se necessário
+        if (language.equalsIgnoreCase("pt") || language.equalsIgnoreCase("br")) {
+            language = "pt-br";
+        }
+    }
+
+    private String getMessage(String key) {
+        String path = "messages." + language + "." + key;
+        String message = messages.getString(path);
+        if (message == null) {
+            message = messages.getString("messages.en." + key, "Message not found: " + key);
+        }
+        return ChatColor.translateAlternateColorCodes('&', message);
     }
 
     private String getLocalizacaoBau(Block bloco) {
@@ -59,7 +90,7 @@ public class ChestPass extends JavaPlugin implements Listener {
         if (!bauSenhas.containsKey(locBau)) {
             if (jogador.isSneaking()) {
                 if (!jogador.isOp() && jogador.hasPermission("chestpass.use.off")) {
-                    jogador.sendMessage(ChatColor.RED + "Você não tem permissão para definir senhas!");
+                    jogador.sendMessage(getMessage("no-permission"));
                     evento.setCancelled(true);
                     return;
                 }
@@ -71,15 +102,16 @@ public class ChestPass extends JavaPlugin implements Listener {
             }
             return;
         } else {
-            evento.setCancelled(true);
             if (bauDonos.get(locBau).equals(jogador.getName())) {
                 if (jogador.isSneaking()) {
                     bauSenhas.remove(locBau);
                     bauDonos.remove(locBau);
-                    jogador.sendMessage(ChatColor.GREEN + "Senha removida do baú!");
+                    jogador.sendMessage(getMessage("password-removed"));
                     return;
                 }
+                return;
             }
+            evento.setCancelled(true);
             definindoSenha.put(jogador, false);
             bauAtual.put(jogador, bau);
             salvarELimparInventario(jogador);
@@ -94,7 +126,26 @@ public class ChestPass extends JavaPlugin implements Listener {
         for (int i = 0; i <= 9; i++) {
             ItemStack cabeca = new ItemStack(Material.PLAYER_HEAD);
             SkullMeta meta = (SkullMeta) cabeca.getItemMeta();
-            meta.setDisplayName(String.valueOf(i));
+            meta.setDisplayName(ChatColor.GOLD + "[ " + ChatColor.YELLOW + i + ChatColor.GOLD + " ]");
+            
+            try {
+                PlayerProfile profile = Bukkit.createPlayerProfile(UUID.randomUUID());
+                PlayerTextures textures = profile.getTextures();
+                URL url;
+                if (i % 2 == 0) {
+                    // Cabeça Vermelha
+                    url = new URL("http://textures.minecraft.net/texture/ba24a2b6b4b5a92d7a82a373fe5f6bb66872ead66c126f82e8864173cd783a");
+                } else {
+                    // Cabeça Verde
+                    url = new URL("http://textures.minecraft.net/texture/921928ea67d3a8b97d212758f15cccac1024295b185b319264844f4c5e1e61e");
+                }
+                textures.setSkin(url);
+                profile.setTextures(textures);
+                meta.setOwnerProfile(profile);
+            } catch (Exception e) {
+                getLogger().warning("Erro ao aplicar textura na cabeça: " + e.getMessage());
+            }
+            
             cabeca.setItemMeta(meta);
             inv.setItem(i, cabeca);
         }
@@ -134,12 +185,12 @@ public class ChestPass extends JavaPlugin implements Listener {
 
         if (evento.getCurrentItem().getType() != Material.PLAYER_HEAD) return;
 
-        String numeroClicado = evento.getCurrentItem().getItemMeta().getDisplayName();
+        String numeroClicado = ChatColor.stripColor(evento.getCurrentItem().getItemMeta().getDisplayName().replaceAll("[\\[\\]\\s]", ""));
         senhasDigitadas.get(jogador).append(numeroClicado);
 
-        // Mostra o número clicado na hotbar
-        ItemStack numeroItem = new ItemStack(Material.PLAYER_HEAD);
-        SkullMeta meta = (SkullMeta) numeroItem.getItemMeta();
+        // Copia a cabeça clicada exatamente como está
+        ItemStack numeroItem = evento.getCurrentItem().clone();
+        ItemMeta meta = numeroItem.getItemMeta();
         meta.setDisplayName(numeroClicado);
         numeroItem.setItemMeta(meta);
         jogador.getInventory().setItem(senhasDigitadas.get(jogador).length() - 1, numeroItem);
@@ -160,7 +211,10 @@ public class ChestPass extends JavaPlugin implements Listener {
         bauSenhas.put(locBau, senha);
         bauDonos.put(locBau, jogador.getName());
         
-        jogador.sendMessage(ChatColor.GREEN + "Senha definida com sucesso!");
+        senhaDefinidaComSucesso.put(jogador, true);
+        jogador.sendMessage(getMessage("password-set"));
+        restaurarInventario(jogador);
+        jogador.closeInventory();
         limparDados(jogador);
     }
 
@@ -170,34 +224,29 @@ public class ChestPass extends JavaPlugin implements Listener {
         Block bau = bauAtual.get(jogador);
         
         if (senhaDigitada.equals(bauSenhas.get(locBau))) {
-            jogador.sendMessage(ChatColor.GREEN + "Senha correta! Baú desbloqueado!");
+            jogador.sendMessage(getMessage("password-correct"));
             restaurarInventario(jogador);
             jogador.closeInventory();
             
-            // Abrindo o baú após um tick para garantir que a interface anterior foi fechada
             Bukkit.getScheduler().runTask(this, () -> {
                 org.bukkit.block.Chest chest = (org.bukkit.block.Chest) bau.getState();
                 Inventory chestInv = chest.getBlockInventory();
                 jogador.openInventory(chestInv);
             });
-        } else {
-            jogador.sendMessage(ChatColor.RED + "Senha incorreta! Tente novamente.");
-            restaurarInventario(jogador);
             limparDados(jogador);
+        } else {
+            jogador.sendMessage(getMessage("password-incorrect"));
+            senhasDigitadas.put(jogador, new StringBuilder());
+            for (int i = 0; i < 9; i++) {
+                jogador.getInventory().setItem(i, null);
+            }
         }
-        
-        // Limpamos os dados apenas depois de usar o baú
-        senhasDigitadas.remove(jogador);
-        bauAtual.remove(jogador);
-        definindoSenha.remove(jogador);
     }
 
     private void limparDados(Player jogador) {
-        restaurarInventario(jogador);
         senhasDigitadas.remove(jogador);
         bauAtual.remove(jogador);
         definindoSenha.remove(jogador);
-        jogador.closeInventory();
     }
 
     private void salvarDados() {
@@ -272,6 +321,70 @@ public class ChestPass extends JavaPlugin implements Listener {
         if (inventariosSalvos.containsKey(jogador)) {
             jogador.getInventory().setContents(inventariosSalvos.get(jogador));
             inventariosSalvos.remove(jogador);
+        }
+    }
+
+    @EventHandler
+    public void aoFecharInventario(InventoryCloseEvent evento) {
+        String titulo = evento.getView().getTitle();
+        if (!titulo.equals("Defina a Senha") && !titulo.equals("Digite a Senha")) return;
+        
+        if (!(evento.getPlayer() instanceof Player)) return;
+        Player jogador = (Player) evento.getPlayer();
+        
+        if (senhaDefinidaComSucesso.remove(jogador) != null) {
+            return;
+        }
+        
+        if (senhasDigitadas.containsKey(jogador)) {
+            if (definindoSenha.get(jogador)) {
+                restaurarInventario(jogador);
+                limparDados(jogador);
+                jogador.sendMessage(getMessage("password-cancelled"));
+            } else {
+                jogador.sendMessage(getMessage("password-incorrect"));
+                restaurarInventario(jogador);
+                limparDados(jogador);
+            }
+            inventariosSalvos.remove(jogador);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void aoReceberItem(InventoryClickEvent evento) {
+        if (!(evento.getWhoClicked() instanceof Player)) return;
+        Player jogador = (Player) evento.getWhoClicked();
+        
+        if (estaDigitandoSenha(jogador) && !evento.getView().getTitle().equals("Defina a Senha") 
+            && !evento.getView().getTitle().equals("Digite a Senha")) {
+            evento.setCancelled(true);
+            jogador.sendMessage(getMessage("inventory-locked"));
+            return;
+        }
+    }
+
+    @EventHandler(priority = org.bukkit.event.EventPriority.HIGHEST)
+    public void aoArrastarItem(InventoryDragEvent evento) {
+        if (!(evento.getWhoClicked() instanceof Player)) return;
+        Player jogador = (Player) evento.getWhoClicked();
+        
+        if (estaDigitandoSenha(jogador)) {
+            evento.setCancelled(true);
+            jogador.sendMessage(ChatColor.RED + "Você não pode mexer no inventário enquanto digita uma senha!");
+        }
+    }
+
+    private boolean estaDigitandoSenha(Player jogador) {
+        return senhasDigitadas.containsKey(jogador) || inventariosSalvos.containsKey(jogador);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void aoColetarItem(org.bukkit.event.player.PlayerPickupItemEvent evento) {
+        Player jogador = evento.getPlayer();
+        
+        if (senhasDigitadas.containsKey(jogador) || inventariosSalvos.containsKey(jogador)) {
+            evento.setCancelled(true);
+            //jogador.sendMessage(ChatColor.RED + "Você não pode pegar itens enquanto digita uma senha!");
         }
     }
 }

@@ -1,0 +1,20 @@
+# Language configuration (en, pt-br, br, pt)
+language: en
+
+messages:
+  en:
+    no-permission: "&cYou don't have permission to set passwords!"
+    password-removed: "&aPassword removed from chest!"
+    password-set: "&aPassword set successfully!"
+    password-correct: "&aCorrect password! Chest unlocked!"
+    password-incorrect: "&cIncorrect password! Try again!"
+    password-cancelled: "&ePassword setting cancelled."
+    inventory-locked: "&cYou can't use your inventory while typing a password!"
+  pt-br:
+    no-permission: "&cVocê não tem permissão para definir senhas!"
+    password-removed: "&aSenha removida do baú!"
+    password-set: "&aSenha definida com sucesso!"
+    password-correct: "&aSenha correta! Baú desbloqueado!"
+    password-incorrect: "&cSenha incorreta! Tente novamente!"
+    password-cancelled: "&eDefinição de senha cancelada."
+    inventory-locked: "&cVocê não pode mexer no inventário enquanto digita uma senha!" 
